@@ -2,9 +2,9 @@
 
 A vanilla annotated implementation of the Transformer model introduced in the paper [Attention Is All You Need, 2017](https://arxiv.org/pdf/1706.03762.pdf) by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin.
 
-This is an in progress project aimed exclusively at educational purposes. The [notebook](nb.transformer101.ipynb) version is intentionally verbose to grasp the technical concepts behind the Transformer architecture. The nano version is a lightweight implementation of the Transformer in less than 150 lines of code.
+Tags: ``[Scaled Dot-Product Attention]`` ``[Multi-Head Attention]`` ``[Absolute Positional Encodings]`` ``[Learned Positional Encodings]`` ``[Dropout]`` ``[Layer Normalization]`` ``[Residual Connection]`` ``[Linear Layer]`` ``[Position-Wise Feed-Forward Layer]`` ``[GELU]`` ``[Softmax]`` ``[Transformer]``
 
-**Scaled Dot-Product Attention | Multi-Head Attention | Absolute Positional Encodings | Learned Positional Encodings | Dropout | Layer Normalization | Residual Connection | Linear Layer | Position-Wise Feed-Forward Layer | GELU | Softmax | Transformer**
+> *This is an in progress project aimed exclusively at educational purposes. The [notebook version](nb.transformer101.ipynb) is intentionally verbose to allow the reader grasp the technical concepts behind the Transformer architecture. The [nano version]() is a lightweight implementation of the Transformer in less than 150 lines of code.*
 
 ### 1. Background
 
