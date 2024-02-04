@@ -4,6 +4,8 @@ Vanilla implementation in Pytorch of the Transformer model as introduced in the 
 
 ``Scaled Dot-Product Attention`` | ``Multi-Head Attention`` | ``Absolute Positional Encodings`` | ``Learned Positional Encodings`` | ``Dropout`` | ``Layer Normalization`` | ``Residual Connection`` | ``Linear Layer`` | ``Position-Wise Feed-Forward Layer`` | ``GELU`` | ``Softmax`` | ``Encoder`` | ``Decorder`` | ``Transformer``
 
+*Note that this is just an in progress learning project - if you are looking for production grade implementations, refer to the [PyTorch Transformer Class](https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html), and [OLMo](https://github.com/allenai/OLMo/), a fully open language model.*
+
 ### 1. Background
 
 Sequence modeling and transduction tasks, such as language modeling and machine translation, were typically addressed with RNNs and CNNs. However, these architectures are limited by: (i) ``long training times``, due to the sequential nature of RNNs, which constrains parallelization, and results in increased memory and computational demands as the text sequence grows; and (ii) ``difficulty in learning dependencies between distant positions``, where CNNs, although much less sequential than RNNs, require a number of steps to integrate information that is, in most cases, correlated (linearly for models like ConvS2S and logarithmically for ByteNet) with the distance between elements in the sequence.
@@ -20,8 +22,10 @@ In the proposed implementation, the input and output tokens are converted to 512
 
 
 ```python
+import math
 import torch
 import torch.nn as nn
+import torch.optim as optim
 ```
 
 
@@ -29,19 +33,25 @@ import torch.nn as nn
 from dataclasses import dataclass
 
 @dataclass
-class TransformerConfig:
-    n_layer: int = 6        # number of encoder/decoder layers
-    n_head: int = 12        # number of attention heads
-    d_embd: int = 768       # dimension of the token embeddings
-    d_ff: int = 4096        # dimension of the feedforward network
-    drop: float = 0.1       # dropout probability
-    max_seq_len: int = 512  # maximum sequence length
-    pad_token_id: int = 0   # padding token id (usually 0)
+class ModelConfig:
+    """ 
+    Transformer (model) configuration
+    """
+
+    d_model: int = 768         # dimension of the token embeddings (hideen size of the model)
+    n_layer: int = 6           # number of encoder/decoder layers
+    n_head: int = 12           # number of self-attention heads
+    d_ff: int = 2048           # dimension of the feedforward network
+    vocab_size: int = 50       # size of the vocabulary
+    drop: float = 0.1          # dropout probability
+    max_seq_len: int = 100     # maximum sequence length
+    pad_token_id: int = 0      # padding token id (usually 0)
+    activation: str = "gelu"   # activation function
 ```
 
 
 ```python
-config = TransformerConfig()
+config = ModelConfig()
 ```
 
 #### 3.1 Self-Attention
@@ -67,33 +77,62 @@ class AttentionHead(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.d_head = config.d_embd // config.n_head
-        # step_1: linear projections to query (q), key (k), and value (v) vectors
-        self.q = nn.Linear(config.d_embd, self.d_head)
-        self.k = nn.Linear(config.d_embd, self.d_head)
-        self.v = nn.Linear(config.d_embd, self.d_head)
+        self.d_head = config.d_model // config.n_head
+
+        self.q = nn.Linear(config.d_model, self.d_head)
+        self.k = nn.Linear(config.d_model, self.d_head)
+        self.v = nn.Linear(config.d_model, self.d_head)
 
     def scaled_dot_product_attention(self, q, k, v, mask=None):
         dim_k = torch.tensor(k.size(-1), dtype=torch.float32)
-        # step_2: calculate (q, k) similarity with the dot product, and scale attention scores
         attn_scores = torch.bmm(q, k.transpose(1, 2)) / torch.sqrt(dim_k)
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, float('-inf'))
-        # step_3: normalize the attention scores with the softmax function
+
         attn_weights = torch.softmax(attn_scores, axis=-1)
-        # step_4: update the token embeddings by multiplying attention weights by the value vector
         output = torch.bmm(attn_weights, v)
         return output
 
-    def forward(self, x, mask=None):
-        output = self.scaled_dot_product_attention(self.q(x), 
-                                                   self.k(x), 
-                                                   self.v(x), 
+    def forward(self, q, k, v, mask=None):
+        """
+        Args:
+            q (torch.Tensor): query embeddings.
+            k (torch.Tensor): key embeddings.
+            v (torch.Tensor): value embeddings.
+            mask (torch.Tensor): attention mask.
+        """
+        output = self.scaled_dot_product_attention(self.q(q), 
+                                                   self.k(k), 
+                                                   self.v(v), 
                                                    mask=mask)
         return output
 ```
 
-#### 3.2 Multi-Headed Attention
+
+```python
+attention_head = AttentionHead(config)
+
+x = torch.randn(10, 32, config.d_model)
+"""
+10: batch size
+32: sequence length
+config.d_model: hidden size (embedding dimension)
+"""
+
+output = attention_head(x, x, x)
+
+print(output.shape)
+# Should be [10, 32, d_head == 768 / 12]
+# 
+# Note that in the linear projection step, q, k, and v are in practice splitted into n_head parts.
+# Those will be then concatenated and projected to the final output size 
+# in the MultiHeadAttention class (see below).
+```
+
+    torch.Size([10, 32, 64])
+
+
+#### 3.2 Multi-Head Attention
 
 In a standard attention mechanism, the ``softmax`` of a single head tends to concentrate on a specific aspect of similarity, potentially overlooking other relevant features in the input. By integrating multiple attention heads, the model gains the ability to simultaneously attend to various aspects of the input data.
 
@@ -116,16 +155,13 @@ class MultiHeadAttention(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-
-        if config.d_embd < 0 or config.n_head < 0:
-            raise ValueError("Embedding dimension and number of heads must be greater than 0")
-        assert config.d_embd % config.n_head == 0, "d_embd must be divisible by n_head"
+        assert config.d_model % config.n_head == 0, "d_model must be divisible by n_head"
 
         self.heads = nn.ModuleList([AttentionHead(config) for _ in range(config.n_head)])
-        self.linear = nn.Linear(config.d_embd, config.d_embd)
+        self.linear = nn.Linear(config.d_model, config.d_model)
 
-    def forward(self, x, mask=None):
-        attn_outputs = torch.cat([h(x, mask) for h in self.heads], dim=-1)
+    def forward(self, q, k, v, mask=None):
+        attn_outputs = torch.cat([h(q, k, v, mask) for h in self.heads], dim=-1)
         output = self.linear(attn_outputs)
         return output
 ```
@@ -133,14 +169,20 @@ class MultiHeadAttention(nn.Module):
 
 ```python
 multihead_attn = MultiHeadAttention(config)
-attn_output = multihead_attn(torch.rand(1, 10, 768))
+
+x = torch.randn(10, 32, config.d_model)
+attn_output = multihead_attn(x, x, x)
 attn_output.size()
+# Should be [10, 32, d_model
+# 
+# Note that the output size is the same as the input size, 
+# as the attention scores of each head are concatenated and projected back to the original size.
 ```
 
 
 
 
-    torch.Size([1, 10, 768])
+    torch.Size([10, 32, 768])
 
 
 
@@ -154,7 +196,7 @@ In summary, this Layer comprises:
 - ``Second linear transformation``, increasing the model's capacity to learn complex relationships in the data.
 - ``Dropout``, a regularization technique used to prevent overfitting. It randomly zeroes some of the elements of the input tensor with a certain probability during training.
 
-> Note that the ``ReLU`` function is a faster function that activates units only when the input is possitive, which can lead to sparse activations (that can be intended in some tasks); whereas ``GELU``, introduced after``ReLU``, offers smoother activation by modeling the input as a stochastic process, providing a probabilistic gate in the activation. In practice, ``GELU`` has been the preferred choice in the BERT and GPT models.
+> Note that the ``ReLU`` function is a faster function that activates units only when the input is possitive, which can lead to sparse activations (that can be intended in some tasks); whereas ``GELU``, introduced after``ReLU``, offers smoother activation by modeling the input as a stochastic process, providing a probabilistic gate in the activation. In practice, ``GELU`` has been the preferred choice in the BERT and GPT models. Although recent models like LLaMA, PaLM, and [OLMo](https://allenai.org/olmo/olmo-paper.pdf) use the [SwiGLU](https://www.semanticscholar.org/paper/GLU-Variants-Improve-Transformer-Shazeer/bdbf780dfd6b3eb0c9e980887feae5f23af15bc4) activation function
 
 
 ```python
@@ -168,9 +210,9 @@ class PositionWiseFeedForward(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.ff = nn.Sequential(
-            nn.Linear(config.d_embd, config.d_ff),
+            nn.Linear(config.d_model, config.d_ff),
             nn.GELU(),
-            nn.Linear(config.d_ff, config.d_embd),
+            nn.Linear(config.d_ff, config.d_model),
             nn.Dropout(config.drop)
         )
 
@@ -180,15 +222,16 @@ class PositionWiseFeedForward(nn.Module):
 
 
 ```python
-feed_forward = PositionWiseFeedForward(config)
-feed_forward_outputs = feed_forward(torch.rand(1, 10, 768))
-feed_forward_outputs.size()
+ff = PositionWiseFeedForward(config)
+x = torch.randn(10, 32, config.d_model)
+ff(x).size()
+# Should be [10, 32, d_model]
 ```
 
 
 
 
-    torch.Size([1, 10, 768])
+    torch.Size([10, 32, 768])
 
 
 
@@ -202,75 +245,42 @@ Since the Transformer model contains no recurrence and no convolution, the model
 
 
 ```python
-class SinusoidalPositionalEncoding(nn.Module):
+class PositionalEncoding(nn.Module):
     """
-    Implements Sinusoidal Positional Encoding.
-
-    Parameters:
-        embed_size (int): The size of the input feature dimension.
-    """
-    def __init__(self, config):
-        super().__init__()
-        self.d_embd = config.d_embd
-        self.max_seq_len = config.max_seq_len
-
-    def forward(self):
-        pos = torch.arange(self.max_seq_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, self.d_embd, 2) * -(torch.log(torch.tensor(10000.0)) / self.d_embd))
-        
-        pe = torch.zeros(self.max_seq_len, self.d_embd)
-        pe[:, 0::2] = torch.sin(pos * div_term)
-        pe[:, 1::2] = torch.cos(pos * div_term)
-
-        return pe
-```
-
-
-```python
-pos_encoder = SinusoidalPositionalEncoding(config)
-pos_encoding = pos_encoder()
-
-pos_encoding.shape  # Should be [max_seq_len, d_embd]
-```
-
-
-
-
-    torch.Size([100, 768])
-
-
-
-
-```python
-class LearnedPositionalEncoding(nn.Module):
-    """
-    Implements the LearnedPositionalEncoding layer.
+    Implements the PositionalEncoding layer.
 
     Args:
         config (TransformerConfig): The configuration for the transformer model.
     """
     def __init__(self, config):
         super().__init__()
+        self.d_model = config.d_model
+        self.max_seq_len = config.max_seq_len
 
-        self.pos_embd = nn.Embedding(config.max_seq_len, config.d_embd)
-        self.dropout = nn.Dropout(config.drop)
+        position = torch.arange(self.max_seq_len).unsqueeze(1)
+        div_term = torch.pow(10000, torch.arange(0, self.d_model, 2) / self.d_model)
+
+        pe = torch.zeros(1, self.max_seq_len, self.d_model)
+        pe[0, :, 0::2] = torch.sin(position / div_term)
+        pe[0, :, 1::2] = torch.cos(position / div_term)
+
+        self.register_buffer('pe', pe)
 
     def forward(self, x):
-        embd = x + self.pos_embd(torch.arange(x.size(1), device=x.device))
-        return self.dropout(embd)
+        return x + self.pe[:, :x.size(1), :]
 ```
 
 
 ```python
-encoding_layer = LearnedPositionalEncoding(config)
-encoding_outputs = encoding_layer(torch.rand(1, 100, 768))
-encoding_outputs.size()
+pe = PositionalEncoding(config)
+x = torch.randn(10, 64, config.d_model)
+pe(x).size()
 ```
 
 
 
 
-    torch.Size([1, 100, 768])
+    torch.Size([10, 64, 768])
 
 
 
@@ -296,16 +306,16 @@ class EncoderLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        self.norm_1 = nn.LayerNorm(config.d_embd)
+        self.norm_1 = nn.LayerNorm(config.d_model)
         self.masked_attn = MultiHeadAttention(config)
 
-        self.norm_2 = nn.LayerNorm(config.d_embd)
+        self.norm_2 = nn.LayerNorm(config.d_model)
         self.feed_forward = PositionWiseFeedForward(config)
         
         self.dropout = nn.Dropout(config.drop)
         
     def forward(self, x, mask=None):
-        attn_outputs = self.multihead_attn(self.norm_1(x), mask=mask)
+        attn_outputs = self.masked_attn(x, x, x, mask=mask)
         x = x + self.dropout(attn_outputs)
 
         output = x + self.dropout(self.feed_forward(self.norm_2(x)))
@@ -315,13 +325,15 @@ class EncoderLayer(nn.Module):
 
 ```python
 encoder_layer = EncoderLayer(config)
-encoder_layer(torch.rand(1, 100, 768)).size()
+x = torch.randn(10, 32, config.d_model)
+encoder_layer(x).size()
+# Should be [10, 32, d_model]
 ```
 
 
 
 
-    torch.Size([1, 100, 768])
+    torch.Size([10, 32, 768])
 
 
 
@@ -336,11 +348,13 @@ class Encoder(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.pos_enc = LearnedPositionalEncoding(config)
+        self.embedding = nn.Embedding(config.vocab_size, config.d_model)
+        self.pe = PositionalEncoding(config)
         self.layers = nn.ModuleList([EncoderLayer(config) for _ in range(config.n_layer)])
 
     def forward(self, x, mask=None):
-        x = self.pos_enc(x)
+        x = self.embedding(x) * math.sqrt(config.d_model)
+        x = self.pe(x)
         for layer in self.layers:
             x = layer(x, mask)
         return x
@@ -349,13 +363,15 @@ class Encoder(nn.Module):
 
 ```python
 encoder = Encoder(config)
-encoder(torch.rand(1, 100, 768)).size()
+x = torch.randint(0, config.vocab_size, (10, 32))
+encoder(x).size()
+# Should be [10, 32, d_model]
 ```
 
 
 
 
-    torch.Size([1, 100, 768])
+    torch.Size([10, 32, 768])
 
 
 
@@ -374,24 +390,23 @@ class DecoderLayer(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.norm_1 = nn.LayerNorm(config.d_embd)
+        self.norm_1 = nn.LayerNorm(config.d_model)
         self.masked_attn = MultiHeadAttention(config)
 
-        self.norm_2 = nn.LayerNorm(config.d_embd)
+        self.norm_2 = nn.LayerNorm(config.d_model)
         self.cross_attn = MultiHeadAttention(config)
 
-        self.norm_3 = nn.LayerNorm(config.d_embd)
+        self.norm_3 = nn.LayerNorm(config.d_model)
         self.feed_forward = PositionWiseFeedForward(config)
         
         self.dropout = nn.Dropout(config.drop)
 
-    def forward(self, x, enc_output, mask=None):
-        attn_output = self.masked_attn(x, mask)
+    def forward(self, x, enc_output, src_mask=None, tgt_mask=None):
+        attn_output = self.masked_attn(x, x, x, tgt_mask)
         x = self.norm_1(x + self.dropout(attn_output))
 
-        # cross_attn_output = self.cross_attn(x, enc_output) ??
-        cross_attn_output = self.cross_attn(x)
-        x = self.norm_2(x + self.dropout(cross_attn_output))
+        attn_output = self.cross_attn(x, enc_output, enc_output, src_mask)
+        x = self.norm_2(x + self.dropout(attn_output))
 
         output = self.norm_3(x + self.dropout(self.feed_forward(x)))
         return output
@@ -400,13 +415,16 @@ class DecoderLayer(nn.Module):
 
 ```python
 decoder_layer = DecoderLayer(config)
-decoder_layer(torch.rand(1, 100, 768), torch.rand(1, 100, 768), mask=None).size()
+x = torch.randn(10, 32, config.d_model)
+encoder_output = torch.randn(10, 32, config.d_model)
+decoder_layer(x, encoder_output).size()
+# Should be [10, 32, d_model]
 ```
 
 
 
 
-    torch.Size([1, 100, 768])
+    torch.Size([10, 32, 768])
 
 
 
@@ -421,26 +439,29 @@ class Decoder(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.pos_enc = LearnedPositionalEncoding(config)
+        self.embedding = nn.Embedding(config.vocab_size, config.d_model)
+        self.pe = PositionalEncoding(config)
         self.layers = nn.ModuleList([DecoderLayer(config) for _ in range(config.n_layer)])
 
-    def forward(self, x, enc_output, mask=None):
-        x = self.pos_enc(x)
+    def forward(self, x, enc_output, src_mask=None, tgt_mask=None):
+        x = self.embedding(x) * math.sqrt(config.d_model)
+        x = self.pe(x)
         for layer in self.layers:
-            x = layer(x, enc_output, mask)
+            x = layer(x, enc_output, src_mask, tgt_mask)
         return x
 ```
 
 
 ```python
 decoder = Decoder(config)
-decoder(x=torch.rand(1, 100, 768), enc_output=torch.rand(1, 100, 768)).size()
+x = torch.randint(0, config.vocab_size, (10, 32))
+torch.randn(10, 32, config.d_model).size()
 ```
 
 
 
 
-    torch.Size([1, 100, 768])
+    torch.Size([10, 32, 768])
 
 
 
@@ -452,7 +473,7 @@ The ``source mask`` is typically used in the encoder to ignore padding tokens in
 
 
 ```python
-class Transfomer(nn.Module):
+class Transformer(nn.Module):
     """
     Implements the Transformer architecture.
 
@@ -464,6 +485,7 @@ class Transfomer(nn.Module):
 
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
+        self.linear = nn.Linear(config.d_model, config.vocab_size)
 
     def generate_mask(self, src, tgt):
         src_mask = (src != config.pad_token_id).unsqueeze(1).unsqueeze(2)
@@ -475,8 +497,78 @@ class Transfomer(nn.Module):
     def forward(self, src, tgt):
         src_mask, tgt_mask = self.generate_mask(src, tgt)
         
-        enc_output = self.encoder(src, mask=src_mask)
-        dec_output = self.decoder(tgt, enc_output, mask=tgt_mask)
+        enc_output = self.encoder(src, mask=None)
+        dec_output = self.decoder(tgt, enc_output, src_mask=None, tgt_mask=None)
         
-        return dec_output
+        return self.linear(dec_output)
+```
+
+
+```python
+model = Transformer(config)
+src = torch.randint(0, config.vocab_size, (10, 32))
+tgt = torch.randint(0, config.vocab_size, (10, 32))
+
+model(src, tgt).size()
+# Should be [10, 32, vocab_size]
+```
+
+
+
+
+    torch.Size([10, 32, 50])
+
+
+
+### 4. Training
+
+
+```python
+# mock data loader to test if the model can be trained
+
+class MockDataLoader:
+    def __init__(self, batch_size, sequence_length, vocab_size, num_batches):
+        self.batch_size = batch_size
+        self.sequence_length = sequence_length
+        self.vocab_size = vocab_size
+        self.num_batches = num_batches
+
+    def __iter__(self):
+        for _ in range(self.num_batches):
+            src = torch.randint(0, self.vocab_size, (self.batch_size, self.sequence_length))
+            tgt = torch.randint(0, self.vocab_size, (self.batch_size, self.sequence_length))
+            yield src, tgt
+
+dataloader = MockDataLoader(batch_size=64, sequence_length=32, vocab_size=config.vocab_size, num_batches=3)
+```
+
+
+```python
+# dummy training loop
+# in practice we will work we a larger vacabulary, sequence length, and epochs
+
+transformer = Transformer(config)
+
+criterion = nn.CrossEntropyLoss(ignore_index=config.pad_token_id)
+optimizer = torch.optim.Adam(model.parameters())
+# optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
+
+
+# dataloader provides batches of (src, tgt) pairs
+for epoch in range(5):
+    for i, (src, tgt) in enumerate(dataloader):
+        # Reset gradients
+        optimizer.zero_grad()
+        # Forward pass
+        output = transformer(src, tgt[:, :-1])  # Exclude the last token from the target input to the decoder
+
+        # Compute loss
+        # Shift the target sequences one token to the left
+        loss = criterion(output.view(-1, config.vocab_size), tgt[:, 1:].contiguous().view(-1))  
+
+        # Backward pass and optimization
+        loss.backward()
+        optimizer.step()
+
+        print(f'Epoch: {epoch}, Iteration: {i}, Loss: {loss.item()}')
 ```
