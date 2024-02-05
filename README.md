@@ -536,6 +536,8 @@ def load_dataset():
     return en, es
 ```
 
+
+
 ```python
 src, tgt = load_dataset()
 ```
@@ -687,9 +689,16 @@ def prepare_batch(X, Y):
 from sklearn.utils import shuffle
 
 def batch_generator(X, Y, batch_size):
-    X, Y = shuffle(X, Y, random_state=42)
-    for i in range(0, len(X), batch_size):
-        yield prepare_batch(X[i:i+batch_size], Y[i:i+batch_size])
+    idx = 0
+    while True:
+        bx = X[idx:idx+batch_size]
+        by = Y[idx:idx+batch_size]
+        
+        yield prepare_batch(bx, by)
+        
+        idx = (idx + batch_size) % len(x)
+        if idx == 0:
+            X, Y = shuffle(X, Y, random_state=42)
     
 ```
 
@@ -734,6 +743,18 @@ config
 criterion = nn.CrossEntropyLoss(ignore_index=config.pad_token_id)
 optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
 ```
+
+
+```python
+len(src_train) // batch_size
+```
+
+
+
+
+    2974
+
+
 
 We perform a sample training process comprising 3 epochs with a batch of 32 to demonstrate that the model can be trained. We recommend 20 epochs and a batch of len(src_train) // batch_size for better results.
 
