@@ -1,4 +1,4 @@
-## Transformer101
+# Transformer101
 
 Vanilla implementation in Pytorch of the Transformer model as introduced in the paper [Attention Is All You Need, 2017](https://arxiv.org/pdf/1706.03762.pdf) by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin.
 
@@ -6,11 +6,11 @@ Vanilla implementation in Pytorch of the Transformer model as introduced in the 
 
 *Note that this is just an in progress learning project - if you are looking for production grade implementations, refer to the [PyTorch Transformer Class](https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html), and [OLMo](https://github.com/allenai/OLMo/), a fully open language model.*
 
-### 1. Background
+## 1. Background
 
 Sequence modeling and transduction tasks, such as language modeling and machine translation, were typically addressed with RNNs and CNNs. However, these architectures are limited by: (i) ``long training times``, due to the sequential nature of RNNs, which constrains parallelization, and results in increased memory and computational demands as the text sequence grows; and (ii) ``difficulty in learning dependencies between distant positions``, where CNNs, although much less sequential than RNNs, require a number of steps to integrate information that is, in most cases, correlated (linearly for models like ConvS2S and logarithmically for ByteNet) with the distance between elements in the sequence.
 
-### 2. Technical Approach
+## 2. Technical Approach
 
 The paper 'Attention is All You Need' introduced the novel Transformer model, ``a stacked encoder-decoder architecture that utilizes self-attention mechanisms instead of recurrence and convolution to compute input and output representations``. In this model, each of the six layers of both the encoder and decoder is composed of two main sub-layers: a multihead self-attention sub-layer, which allows the model to focus on different parts of the input sequence, and a position-wise fully connected feed-forward sub-layer.
 
@@ -18,7 +18,7 @@ At its core, the ``self-attention mechanism`` enables the model to weight the re
 
 In the proposed implementation, the input and output tokens are converted to 512-dimensional embeddings, to which ``positional embeddings`` are added, enabling the model to use sequence order information.
 
-### 3. Transformer Model Implementation
+## 3. Transformer Model Implementation
 
 
 ```python
@@ -42,7 +42,8 @@ class ModelConfig:
     n_layer: int = 6           # number of encoder/decoder layers
     n_head: int = 12           # number of self-attention heads
     d_ff: int = 2048           # dimension of the feedforward network
-    vocab_size: int = 50       # size of the vocabulary
+    src_vocab_size: int = 32   # size of the source vocabulary
+    tgt_vocab_size: int = 48   # size of the vocabulary
     drop: float = 0.1          # dropout probability
     max_seq_len: int = 100     # maximum sequence length
     pad_token_id: int = 0      # padding token id (usually 0)
@@ -54,7 +55,7 @@ class ModelConfig:
 config = ModelConfig()
 ```
 
-#### 3.1 Self-Attention
+### 3.1 Self-Attention
 
 The intuition behind ``self-attention`` is that averaging token embeddings instead of using a fixed embedding for each token, enables the model to capture how words relate to each other in the input. In practice, said weighted relationships (attention weights) represent the syntactic and contextual structure of the sentence, leading to a more nuanced and rich understanding of the data.
 
@@ -132,7 +133,7 @@ print(output.shape)
     torch.Size([10, 32, 64])
 
 
-#### 3.2 Multi-Head Attention
+### 3.2 Multi-Head Attention
 
 In a standard attention mechanism, the ``softmax`` of a single head tends to concentrate on a specific aspect of similarity, potentially overlooking other relevant features in the input. By integrating multiple attention heads, the model gains the ability to simultaneously attend to various aspects of the input data.
 
@@ -186,7 +187,7 @@ attn_output.size()
 
 
 
-#### 3.3 Position-Wise Feed-Forward Layer
+### 3.3 Position-Wise Feed-Forward Layer
 
 The Transformer, primarily built upon linear operations like ``dot products`` and ``linear projections``, relies on the ``Position-Wise Feed-Forward Layer`` to introduce non-linearity into the model. This non-linearity enables the model to capture complex data patterns and relationships. The layer typically consists of two linear transformations with a ``non-linear activation function (like ReLU or GELU)``. Each layer in the ``Encoder`` and ``Decoder`` includes one of these feed-forward networks, allowing the model to build increasingly abstract representations of the input data as it passes through successive layers. Note that since this layer processes each embedding independly, the computations can be fully parallelized.
 
@@ -235,7 +236,7 @@ ff(x).size()
 
 
 
-#### 3.4 Positional Encoding
+### 3.4 Positional Encoding
 
 Since the Transformer model contains no recurrence and no convolution, the model is invariant to the position of the tokens. By adding ``positional encoding`` to the input sequence, the Transformer model can differentiate between tokens based on their position in the sequence, which is important for tasks such as language modeling and machine translation. In practice, ``positional encodings`` are added to the input embeddings at the bottoms of the ``encoder`` and ``decoder`` stacks. 
 
@@ -284,7 +285,7 @@ pe(x).size()
 
 
 
-#### 3.5 Encoder
+### 3.5 Encoder
 
 Each of the six layers of both the encoder and decoder is composed of two main sub-layers: a ``multihead self-attention`` sub-layer, which as explained hereinabove allows the model to focus on different parts of the input sequence, and a ``position-wise fully connected feed-forward`` sub-layer. In addition, the model employs a ``residual connection`` around each of the two sub-layers, followed by ``layer normalization``. In our case, we implement pre layer (instead of post layer) normalization with ``Dropout`` regularization to favour stability during training and prevent overfitting, respectively.
 
@@ -348,7 +349,7 @@ class Encoder(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.embedding = nn.Embedding(config.vocab_size, config.d_model)
+        self.embedding = nn.Embedding(config.src_vocab_size, config.d_model)
         self.pe = PositionalEncoding(config)
         self.layers = nn.ModuleList([EncoderLayer(config) for _ in range(config.n_layer)])
 
@@ -363,7 +364,7 @@ class Encoder(nn.Module):
 
 ```python
 encoder = Encoder(config)
-x = torch.randint(0, config.vocab_size, (10, 32))
+x = torch.randint(0, config.src_vocab_size, (10, 32))
 encoder(x).size()
 # Should be [10, 32, d_model]
 ```
@@ -375,7 +376,7 @@ encoder(x).size()
 
 
 
-#### 3.6 Decoder
+### 3.6 Decoder
 
 The Decoder has two attention sub-layers: ``masked multi-head self-attention layer`` and ``encoder-decoder attention layer``.
 
@@ -439,7 +440,7 @@ class Decoder(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.embedding = nn.Embedding(config.vocab_size, config.d_model)
+        self.embedding = nn.Embedding(config.tgt_vocab_size, config.d_model)
         self.pe = PositionalEncoding(config)
         self.layers = nn.ModuleList([DecoderLayer(config) for _ in range(config.n_layer)])
 
@@ -454,7 +455,7 @@ class Decoder(nn.Module):
 
 ```python
 decoder = Decoder(config)
-x = torch.randint(0, config.vocab_size, (10, 32))
+x = torch.randint(0, config.tgt_vocab_size, (10, 32))
 torch.randn(10, 32, config.d_model).size()
 ```
 
@@ -465,7 +466,7 @@ torch.randn(10, 32, config.d_model).size()
 
 
 
-#### 3.7 Transformer
+### 3.7 Transformer
 
 Note that the ``Decoder`` class takes in an additional argument ``enc_output`` which is the output of the ``Encoder`` stack. This is used in the cross-attention mechanism to calculate the attention scores between the decoder input and the encoder output.
 
@@ -485,7 +486,7 @@ class Transformer(nn.Module):
 
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
-        self.linear = nn.Linear(config.d_model, config.vocab_size)
+        self.linear = nn.Linear(config.d_model, config.tgt_vocab_size)
 
     def generate_mask(self, src, tgt):
         src_mask = (src != config.pad_token_id).unsqueeze(1).unsqueeze(2)
@@ -506,21 +507,21 @@ class Transformer(nn.Module):
 
 ```python
 model = Transformer(config)
-src = torch.randint(0, config.vocab_size, (10, 32))
-tgt = torch.randint(0, config.vocab_size, (10, 32))
+src = torch.randint(0, config.src_vocab_size, (10, 32))
+tgt = torch.randint(0, config.tgt_vocab_size, (10, 32))
 
 model(src, tgt).size()
-# Should be [10, 32, vocab_size]
+# Should be [10, 32, tgt_vocab_size]
 ```
 
 
 
 
-    torch.Size([10, 32, 50])
+    torch.Size([10, 32, 48])
 
 
 
-### 4. Training
+## 4. Training
 
 
 ```python
@@ -544,14 +545,10 @@ dataloader = MockDataLoader(batch_size=64, sequence_length=32, vocab_size=config
 
 
 ```python
-# dummy training loop
-# in practice we will work we a larger vacabulary, sequence length, and epochs
-
 transformer = Transformer(config)
 
 criterion = nn.CrossEntropyLoss(ignore_index=config.pad_token_id)
-optimizer = torch.optim.Adam(model.parameters())
-# optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
+optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
 
 
 # dataloader provides batches of (src, tgt) pairs
@@ -572,3 +569,294 @@ for epoch in range(5):
 
         print(f'Epoch: {epoch}, Iteration: {i}, Loss: {loss.item()}')
 ```
+
+## 4. Training
+
+We will train our transformer model to translate from english to spanish. The dataset has been obtained from https://tatoeba.org
+
+
+```python
+# use pandas to read txt in tabular pairs
+import pandas as pd
+def load_dataset():
+    df = pd.read_csv('data/en-es.txt', sep='\t', header=None)
+    en = df[0].tolist()
+    es = df[1].tolist()
+    return en, es
+```
+
+
+```python
+src, tgt = load_dataset()
+```
+
+
+```python
+src[3500:3510]
+```
+
+
+
+
+    ['We apologize.',
+     'We are happy.',
+     'We are young.',
+     'We can do it.',
+     "We can't sue.",
+     "We can't win.",
+     'We got ready.',
+     'We got ready.',
+     'We had lunch.',
+     'We have some.']
+
+
+
+
+```python
+tgt[3500:3510]
+```
+
+
+
+
+    ['Pedimos disculpas.',
+     'Somos felices.',
+     'Somos jóvenes.',
+     'Podemos hacerlo.',
+     'No podemos demandar.',
+     'No podemos ganar.',
+     'Nos preparamos.',
+     'Estábamos listos.',
+     'Almorzamos.',
+     'Tenemos algo.']
+
+
+
+
+```python
+len(src), len(tgt)
+```
+
+
+
+
+    (118964, 118964)
+
+
+
+
+```python
+import re
+
+def create_vocab(corpus):
+    vocab = set()
+    for s in corpus:
+        vocab.update(re.findall(r'\w+|[^\w\s]', s))
+    w2i = {w: i+4 for i, w in enumerate(vocab)}
+    w2i['PAD'] = 0
+    w2i['SOS'] = 1
+    w2i['EOS'] = 2
+    w2i['UNK'] = 3
+    i2w = {i: w for w, i in w2i.items()}
+
+    return w2i, i2w
+```
+
+
+```python
+src_w2i, src_i2w = create_vocab(src)
+tgt_w2i, tgt_i2w = create_vocab(tgt)
+print(len(src_w2i), len(tgt_w2i))
+```
+
+    14779 28993
+
+
+
+```python
+def encode(corpus, w2i):
+    encoding = []
+    for s in corpus:
+        s_enc = [w2i[w] for w in re.findall(r'\w+|[^\w\s]', s)]
+        s_enc = [w2i['SOS']] + s_enc + [w2i['EOS']]
+        encoding.append(s_enc)
+    return encoding
+```
+
+
+```python
+src_enc = encode(src, src_w2i)
+tgt_enc = encode(tgt, tgt_w2i)
+```
+
+
+```python
+from sklearn.model_selection import train_test_split
+
+src_train, src_test, tgt_train, tgt_test = train_test_split(src_enc,
+                                                            tgt_enc,
+                                                            test_size=0.2,
+                                                            random_state=42)
+
+```
+
+
+```python
+len(src_train), len(src_test), len(tgt_train), len(tgt_test)
+```
+
+
+
+
+    (95171, 23793, 95171, 23793)
+
+
+
+
+```python
+def prepare_batch(X, Y):
+    max_len_X = max([len(x) for x in X])
+    max_len_Y = max([len(y) for y in Y])
+
+    enc_input = torch.zeros(len(X), max_len_X, dtype=torch.long)
+    dec_input = torch.zeros(len(Y), max_len_Y, dtype=torch.long)
+    output = torch.zeros(len(Y), max_len_Y, dtype=torch.long)
+
+    for i, s in enumerate(X):
+        enc_input[i, :len(s)] = torch.tensor(s)
+
+    for i, s in enumerate(Y):
+        dec_input[i, :len(s)-1] = torch.tensor(s[:-1])
+        output[i, :len(s)-1] = torch.tensor(s[1:])
+
+    return enc_input, dec_input, output
+```
+
+
+```python
+from sklearn.utils import shuffle
+
+def batch_generator(X, Y, batch_size):
+    X, Y = shuffle(X, Y, random_state=42)
+    for i in range(0, len(X), batch_size):
+        yield prepare_batch(X[i:i+batch_size], Y[i:i+batch_size])
+    
+```
+
+
+```python
+batch_size = 4
+train_loader = batch_generator(src_train, tgt_train, batch_size)
+be, bd, bo = next(train_loader)
+```
+
+
+```python
+print(be.size(), bd.size(), bo.size())
+```
+
+    torch.Size([4, 12]) torch.Size([4, 11]) torch.Size([4, 11])
+
+
+
+```python
+print([src_i2w[w.item()] for w in be[0]])
+print([tgt_i2w[w.item()] for w in bd[0]])
+print([tgt_i2w[w.item()] for w in bo[0]])
+```
+
+    ['SOS', 'I', "'", 'm', 'not', 'responsible', 'for', 'what', 'Tom', 'did', '.', 'EOS']
+    ['SOS', 'No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'PAD']
+    ['No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'EOS', 'PAD']
+
+
+
+```python
+criterion = nn.CrossEntropyLoss(ignore_index=config.pad_token_id)
+optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+```
+
+
+```python
+config.n_head = 8
+config.max_seq_len = max([len(s) for s in src + tgt])
+config.src_vocab_size = len(src_w2i)
+config.tgt_vocab_size = len(tgt_w2i)
+
+model = Transformer(config).to(device)
+config
+```
+
+
+
+
+    ModelConfig(d_model=768, n_layer=6, n_head=8, d_ff=2048, src_vocab_size=14779, tgt_vocab_size=28993, drop=0.1, max_seq_len=278, pad_token_id=0, activation='gelu')
+
+
+
+We perform a dummy run of 2 epochs with a batch of 3 to demonstrate that the model can be trained. We recommend at least 20 epochs and a batch of len(src_train) // batch_size.
+
+
+```python
+model.train()
+epochs = 2
+
+for epoch in range(epochs):
+    epoch_loss = [] 
+
+    for _ in range(3): # range(len(src_train) // batch_size):
+        be, bd, bs = next(train_loader)
+        be, bd, bs = be.to(device), bd.to(device), bs.to(device)
+
+        optimizer.zero_grad()
+        output = model(be, bd)
+        loss = criterion(output.permute(0, 2, 1), bs)
+        # src, tgt, output
+        print(f'src: {[src_i2w[w.item()] for w in be[0]]}')
+        print(f'tgt: {[tgt_i2w[w.item()] for w in bd[0]]}')
+        print(f'out: {[tgt_i2w[w.item()] for w in output.argmax(dim=-1)[0]]}')
+        print("--")
+        loss.backward()
+        optimizer.step()
+
+        epoch_loss.append(loss.item())
+    print("----------------------------------------------------------")
+    print(f'Epoch: {epoch}, Loss: {sum(epoch_loss) / len(epoch_loss)}')
+    print("----------------------------------------------------------")
+print('Training finished')
+```
+
+    src: ['SOS', 'My', 'family', 'is', 'not', 'that', 'large', '.', 'EOS', 'PAD', 'PAD']
+    tgt: ['SOS', 'Mi', 'familia', 'no', 'es', 'tan', 'grande', '.', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['subjetiva', 'localizar', 'durísimo', 'Dejad', 'boicot', 'orificio', 'movieran', 'Léelo', 'perspectivas', 'deshago', 'meticulosamente', 'colaborar']
+    --
+    src: ['SOS', 'She', 'pressured', 'him', 'to', 'quit', 'his', 'job', '.', 'EOS']
+    tgt: ['SOS', 'Ella', 'le', 'presionó', 'para', 'que', 'dejase', 'su', 'trabajo', '.', 'PAD']
+    out: ['Entonces', 'sigue', 'obsesionada', 'Damasco', 'lavados', 'descuida', 'quedármelo', 'versos', 'noviembre', 'subsistir', 'maravilloso']
+    --
+    src: ['SOS', 'Tom', 'crashed', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'Tom', 'se', 'estrelló', '.', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['Sumatra', 'Apunta', 'afeitándote', 'Alcancé', 'desearía', 'afronte', 'constantemente', 'afronte', 'desearía']
+    --
+    ----------------------------------------------------------
+    Epoch: 0, Loss: 10.421916325887045
+    ----------------------------------------------------------
+    src: ['SOS', 'Can', 'I', 'get', 'by', 'the', 'guard', '?', 'EOS', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', '¿', 'Podré', 'burlar', 'la', 'guardia', '?', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['Escribes', 'descubierto', 'políticamente', 'deposita', 'católica', 'Merecés', 'me', 'bombilla', 'ridiculizarlo', 'llevara', 'abre']
+    --
+    src: ['SOS', 'What', 'did', 'you', 'give', 'Tom', 'on', 'his', 'birthday', '?', 'EOS', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', '¿', 'Qué', 'le', 'regalaste', 'a', 'Tom', 'en', 'su', 'cumpleaños', '?', 'PAD', 'PAD', 'PAD']
+    out: ['plegable', 'burbujas', 'Cancelé', 'titubees', 'Relajate', 'burles', 'empacando', 'elijas', 'galletitas', 'Beben', 'mountain', 'cazafantasmas', 'Salud', 'Halagar']
+    --
+    src: ['SOS', 'We', 'can', 'cure', 'some', 'types', 'of', 'cancer', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'Podemos', 'curar', 'algunos', 'tipos', 'de', 'cáncer', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['departamentos', 'pereza', 'deshago', 'almorzaba', 'lombriz', 'estúpida', 'Hablo', 'supremo', 'comprasteis', 'tomarías', 'Comí', 'cigarrillos', 'llevado', 'frescos', 'manuscrito', 'Bonaparte', 'déjalo']
+    --
+    ----------------------------------------------------------
+    Epoch: 1, Loss: 10.456007957458496
+    ----------------------------------------------------------
+    Training finished
+
