@@ -40,18 +40,15 @@ class ModelConfig:
 
     d_model: int = 768         # dimension of the token embeddings (hideen size of the model)
     n_layer: int = 6           # number of encoder/decoder layers
-    n_head: int = 12           # number of self-attention heads
+    n_head: int = 8            # number of self-attention heads
     d_ff: int = 2048           # dimension of the feedforward network
-    src_vocab_size: int = 32   # size of the source vocabulary
-    tgt_vocab_size: int = 32   # size of the vocabulary
+    src_vocab_size: int = 64   # size of the source vocabulary (will be updated after loading dataset)
+    tgt_vocab_size: int = 64   # size of the target vocabulary (will be updated after loading dataset)
     drop: float = 0.1          # dropout probability
-    max_seq_len: int = 100     # maximum sequence length
+    max_seq_len: int = 128     # maximum sequence length (will be updated after loading dataset)
     pad_token_id: int = 0      # padding token id (usually 0)
     activation: str = "gelu"   # activation function
-```
 
-
-```python
 config = ModelConfig()
 ```
 
@@ -135,7 +132,7 @@ print(output.shape)
 # in the MultiHeadAttention class (see below).
 ```
 
-    torch.Size([10, 32, 64])
+    torch.Size([10, 32, 96])
 
 
 ### 3.2 Multi-Head Attention
@@ -520,7 +517,7 @@ model(src, tgt).size()
 
 
 
-    torch.Size([10, 32, 48])
+    torch.Size([10, 32, 64])
 
 
 
@@ -538,6 +535,16 @@ def load_dataset():
     es = df[1].tolist()
     return en, es
 ```
+
+    /var/folders/9w/8lrchqrd4pnddk3gzw9s1kkr0000gn/T/ipykernel_21229/270616990.py:2: DeprecationWarning: 
+    Pyarrow will become a required dependency of pandas in the next major release of pandas (pandas 3.0),
+    (to allow more performant data types, such as the Arrow string type, and better interoperability with other libraries)
+    but was not found to be installed on your system.
+    If this would cause problems for you,
+    please provide us feedback at https://github.com/pandas-dev/pandas/issues/54466
+            
+      import pandas as pd
+
 
 
 ```python
@@ -699,18 +706,10 @@ def batch_generator(X, Y, batch_size):
 
 
 ```python
-batch_size = 4
+batch_size = 128
 train_loader = batch_generator(src_train, tgt_train, batch_size)
 be, bd, bo = next(train_loader)
 ```
-
-
-```python
-print(be.size(), bd.size(), bo.size())
-```
-
-    torch.Size([4, 12]) torch.Size([4, 11]) torch.Size([4, 11])
-
 
 
 ```python
@@ -719,23 +718,16 @@ print([tgt_i2w[w.item()] for w in bd[0]])
 print([tgt_i2w[w.item()] for w in bo[0]])
 ```
 
-    ['SOS', 'I', "'", 'm', 'not', 'responsible', 'for', 'what', 'Tom', 'did', '.', 'EOS']
-    ['SOS', 'No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'PAD']
-    ['No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'EOS', 'PAD']
+    ['SOS', 'I', "'", 'm', 'not', 'responsible', 'for', 'what', 'Tom', 'did', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    ['SOS', 'No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    ['No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
 
 
 
 ```python
-criterion = nn.CrossEntropyLoss(ignore_index=config.pad_token_id)
-optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
-```
-
-
-```python
-config.n_head = 8
-config.max_seq_len = max([len(s) for s in src + tgt])
-config.src_vocab_size = len(src_w2i)
-config.tgt_vocab_size = len(tgt_w2i)
+config = ModelConfig(src_vocab_size=len(src_w2i),
+                     tgt_vocab_size=len(tgt_w2i),
+                     max_seq_len=max([len(s) for s in src + tgt]))
 
 model = Transformer(config).to(device)
 config
@@ -748,17 +740,25 @@ config
 
 
 
-We perform a dummy run of 2 epochs with a batch of 3 to demonstrate that the model can be trained. We recommend at least 20 epochs and a batch of len(src_train) // batch_size.
+
+```python
+criterion = nn.CrossEntropyLoss(ignore_index=config.pad_token_id)
+optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
+```
+
+We perform a sample training process comprising 3 epochs with a batch of 32 to demonstrate that the model can be trained. We recommend 20 epochs and a batch of len(src_train) // batch_size for better results.
 
 
 ```python
 model.train()
-epochs = 2
+epochs = 3
+batch_size = 32
+train_loader = batch_generator(src_train, tgt_train, batch_size)
 
 for epoch in range(epochs):
-    epoch_loss = [] 
+    epoch_loss = []
 
-    for _ in range(3): # range(len(src_train) // batch_size):
+    for i in range(16): # range(len(src_train) // batch_size):
         be, bd, bs = next(train_loader)
         be, bd, bs = be.to(device), bd.to(device), bs.to(device)
 
@@ -766,10 +766,12 @@ for epoch in range(epochs):
         output = model(be, bd)
         loss = criterion(output.permute(0, 2, 1), bs)
         # src, tgt, output
-        print(f'src: {[src_i2w[w.item()] for w in be[0]]}')
-        print(f'tgt: {[tgt_i2w[w.item()] for w in bd[0]]}')
-        print(f'out: {[tgt_i2w[w.item()] for w in output.argmax(dim=-1)[0]]}')
-        print("--")
+        if i % 8 == 0:
+            print("\n")
+            print(f'src: {[src_i2w[w.item()] for w in be[0]]}')
+            print(f'tgt: {[tgt_i2w[w.item()] for w in bd[0]]}')
+            print(f'out: {[tgt_i2w[w.item()] for w in output.argmax(dim=-1)[0]]}')
+            
         loss.backward()
         optimizer.step()
 
@@ -780,35 +782,44 @@ for epoch in range(epochs):
 print('Training finished')
 ```
 
-    src: ['SOS', 'I', 'hope', 'Tom', "'", 's', 'right', '.', 'EOS', 'PAD']
-    tgt: ['SOS', 'Ojalá', 'que', 'Tom', 'tenga', 'razón', '.', 'PAD', 'PAD', 'PAD']
-    out: ['inmortal', 'pong', 'Jugo', 'sencillo', 'enséñeme', 'lesión', 'provocadas', 'escriba', 'llevarte', 'casualmente']
-    --
-    src: ['SOS', 'Nobody', 'else', 'showed', 'up', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', 'No', 'apareció', 'nadie', 'más', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['capacitada', 'narizota', 'preocupas', 'ganchos', 'enfermedades', 'murmurándose', 'copie', 'oficinistas', 'Haré', 'Prueba', 'aceptable', 'hechas']
-    --
-    src: ['SOS', 'Is', 'the', 'lecture', 'already', 'finished', '?', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', '¿', 'Ha', 'finalizado', 'ya', 'la', 'conferencia', '?', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['Esas', 'derretirán', 'NASA', 'contrataron', 'Trabajaré', 'retrasando', 'nuevas', 'reformar', 'perdone', 'tibia', 'inventario', 'olvidarse', 'encontrada']
-    --
+    
+    
+    src: ['SOS', 'I', "'", 'm', 'not', 'responsible', 'for', 'what', 'Tom', 'did', '.', 'EOS', 'PAD', 'PAD']
+    tgt: ['SOS', 'No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'PAD', 'PAD', 'PAD']
+    out: ['molestan', 'conquistar', 'devastadores', 'comprender', 'Aviv', 'Previno', 'sabiduría', 'Evito', 'viajará', 'toque', 'taxis', 'Roosevelt', 'femeninas']
+    
+    
+    src: ['SOS', 'You', "'", 're', 'doing', 'it', 'wrong', '!', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', '¡', 'Lo', 'estás', 'haciendo', 'mal', '!', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS']
     ----------------------------------------------------------
-    Epoch: 0, Loss: 10.40126864115397
+    Epoch: 0, Loss: 9.223745942115784
     ----------------------------------------------------------
-    src: ['SOS', 'I', 'couldn', "'", 't', 'speak', 'French', '.', 'EOS', 'PAD']
-    tgt: ['SOS', 'No', 'sabía', 'hablar', 'francés', '.', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['guapísima', 'pong', 'meteorito', 'ocasionalmente', 'hablo', 'árbitro', 'fotógrafo', 'tesoros', 'controversias', 'aportando']
-    --
-    src: ['SOS', 'Come', 'closer', 'to', 'me', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', 'Acércate', 'más', 'a', 'mí', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['grafiti', 'dotación', 'aclararse', 'Marque', 'apoyas', 'expulsado', 'reté', 'cercano', 'Accidentalmente', 'asiste', 'diablos', 'divertiría', 'Recientemente']
-    --
-    src: ['SOS', 'You', "'", 're', 'a', 'good', 'journalist', '.', 'EOS']
-    tgt: ['SOS', 'Vos', 'sos', 'un', 'buen', 'periodista', '.', 'PAD']
-    out: ['retórica', 'chavo', 'Irás', 'tocador', 'dejarle', 'asignatura', 'participantes', 'logrado']
-    --
+    
+    
+    src: ['SOS', 'We', "'", 'll', 'wait', 'until', '2', ':', '30', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'Esperaremos', 'hasta', 'las', 'dos', 'y', 'media', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['.', '.', '.', '.', '.', '.', 'EOS', '.', '.', '.', '.', 'EOS', 'EOS', '.', '.', '.']
+    
+    
+    src: ['SOS', 'This', 'book', 'is', 'sold', 'here', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'Este', 'libro', 'se', 'vende', 'aquí', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', '.', 'EOS', 'EOS']
     ----------------------------------------------------------
-    Epoch: 1, Loss: 10.315495808919271
+    Epoch: 1, Loss: 7.560144007205963
+    ----------------------------------------------------------
+    
+    
+    src: ['SOS', 'All', 'the', 'apples', 'that', 'fall', 'are', 'eaten', 'by', 'the', 'pigs', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'Los', 'cerdos', 'se', 'comen', 'todas', 'las', 'manzanas', 'caídas', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', 'EOS', 'EOS', '.', '.', 'EOS', 'EOS', 'EOS', 'EOS']
+    
+    
+    src: ['SOS', 'I', 'like', 'that', 'dog', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'Me', 'gusta', 'ese', 'perro', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['.', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', 'EOS', '.', 'EOS', 'EOS', 'EOS']
+    ----------------------------------------------------------
+    Epoch: 2, Loss: 6.74851581454277
     ----------------------------------------------------------
     Training finished
 
