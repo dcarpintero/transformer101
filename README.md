@@ -536,17 +536,6 @@ def load_dataset():
     return en, es
 ```
 
-    /var/folders/9w/8lrchqrd4pnddk3gzw9s1kkr0000gn/T/ipykernel_21229/270616990.py:2: DeprecationWarning: 
-    Pyarrow will become a required dependency of pandas in the next major release of pandas (pandas 3.0),
-    (to allow more performant data types, such as the Arrow string type, and better interoperability with other libraries)
-    but was not found to be installed on your system.
-    If this would cause problems for you,
-    please provide us feedback at https://github.com/pandas-dev/pandas/issues/54466
-            
-      import pandas as pd
-
-
-
 ```python
 src, tgt = load_dataset()
 ```
@@ -781,43 +770,10 @@ for epoch in range(epochs):
     print("----------------------------------------------------------")
 print('Training finished')
 ```
-
-    
-    
-    src: ['SOS', 'I', "'", 'm', 'not', 'responsible', 'for', 'what', 'Tom', 'did', '.', 'EOS', 'PAD', 'PAD']
-    tgt: ['SOS', 'No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'PAD', 'PAD', 'PAD']
-    out: ['molestan', 'conquistar', 'devastadores', 'comprender', 'Aviv', 'Previno', 'sabiduría', 'Evito', 'viajará', 'toque', 'taxis', 'Roosevelt', 'femeninas']
-    
-    
-    src: ['SOS', 'You', "'", 're', 'doing', 'it', 'wrong', '!', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', '¡', 'Lo', 'estás', 'haciendo', 'mal', '!', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS']
     ----------------------------------------------------------
     Epoch: 0, Loss: 9.223745942115784
     ----------------------------------------------------------
-    
-    
-    src: ['SOS', 'We', "'", 'll', 'wait', 'until', '2', ':', '30', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', 'Esperaremos', 'hasta', 'las', 'dos', 'y', 'media', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['.', '.', '.', '.', '.', '.', 'EOS', '.', '.', '.', '.', 'EOS', 'EOS', '.', '.', '.']
-    
-    
-    src: ['SOS', 'This', 'book', 'is', 'sold', 'here', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', 'Este', 'libro', 'se', 'vende', 'aquí', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', '.', 'EOS', 'EOS']
-    ----------------------------------------------------------
     Epoch: 1, Loss: 7.560144007205963
-    ----------------------------------------------------------
-    
-    
-    src: ['SOS', 'All', 'the', 'apples', 'that', 'fall', 'are', 'eaten', 'by', 'the', 'pigs', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', 'Los', 'cerdos', 'se', 'comen', 'todas', 'las', 'manzanas', 'caídas', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', 'EOS', 'EOS', '.', '.', 'EOS', 'EOS', 'EOS', 'EOS']
-    
-    
-    src: ['SOS', 'I', 'like', 'that', 'dog', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', 'Me', 'gusta', 'ese', 'perro', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['.', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', '.', 'EOS', 'EOS', '.', 'EOS', 'EOS', 'EOS']
     ----------------------------------------------------------
     Epoch: 2, Loss: 6.74851581454277
     ----------------------------------------------------------
