@@ -488,18 +488,16 @@ class Transformer(nn.Module):
         self.decoder = Decoder(config)
         self.linear = nn.Linear(config.d_model, config.tgt_vocab_size)
 
-    def generate_mask(self, src, tgt):
-        src_mask = (src != config.pad_token_id).unsqueeze(1).unsqueeze(2)
-        tgt_mask = (tgt != config.pad_token_id).unsqueeze(1).unsqueeze(3)
-        tgt_mask = tgt_mask & torch.tril(torch.ones((tgt.size(-1), tgt.size(-1)), device=tgt.device)).bool()
-      
-        return src_mask, tgt_mask
+    def generate_mask(self, x):
+        seq_len = x.size(1)
+        mask = torch.tril(torch.ones(seq_len, seq_len)).unsqueeze(0)
+        return mask
 
     def forward(self, src, tgt):
-        src_mask, tgt_mask = self.generate_mask(src, tgt)
+        tgt_mask = self.generate_mask(tgt)
         
         enc_output = self.encoder(src, mask=None)
-        dec_output = self.decoder(tgt, enc_output, src_mask=None, tgt_mask=None)
+        dec_output = self.decoder(tgt, enc_output, src_mask=None, tgt_mask=tgt_mask)
         
         return self.linear(dec_output)
 ```
@@ -520,55 +518,6 @@ model(src, tgt).size()
     torch.Size([10, 32, 48])
 
 
-
-## 4. Training
-
-
-```python
-# mock data loader to test if the model can be trained
-
-class MockDataLoader:
-    def __init__(self, batch_size, sequence_length, vocab_size, num_batches):
-        self.batch_size = batch_size
-        self.sequence_length = sequence_length
-        self.vocab_size = vocab_size
-        self.num_batches = num_batches
-
-    def __iter__(self):
-        for _ in range(self.num_batches):
-            src = torch.randint(0, self.vocab_size, (self.batch_size, self.sequence_length))
-            tgt = torch.randint(0, self.vocab_size, (self.batch_size, self.sequence_length))
-            yield src, tgt
-
-dataloader = MockDataLoader(batch_size=64, sequence_length=32, vocab_size=config.vocab_size, num_batches=3)
-```
-
-
-```python
-transformer = Transformer(config)
-
-criterion = nn.CrossEntropyLoss(ignore_index=config.pad_token_id)
-optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
-
-
-# dataloader provides batches of (src, tgt) pairs
-for epoch in range(5):
-    for i, (src, tgt) in enumerate(dataloader):
-        # Reset gradients
-        optimizer.zero_grad()
-        # Forward pass
-        output = transformer(src, tgt[:, :-1])  # Exclude the last token from the target input to the decoder
-
-        # Compute loss
-        # Shift the target sequences one token to the left
-        loss = criterion(output.view(-1, config.vocab_size), tgt[:, 1:].contiguous().view(-1))  
-
-        # Backward pass and optimization
-        loss.backward()
-        optimizer.step()
-
-        print(f'Epoch: {epoch}, Iteration: {i}, Loss: {loss.item()}')
-```
 
 ## 4. Training
 
@@ -828,35 +777,35 @@ for epoch in range(epochs):
 print('Training finished')
 ```
 
-    src: ['SOS', 'My', 'family', 'is', 'not', 'that', 'large', '.', 'EOS', 'PAD', 'PAD']
-    tgt: ['SOS', 'Mi', 'familia', 'no', 'es', 'tan', 'grande', '.', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['subjetiva', 'localizar', 'durísimo', 'Dejad', 'boicot', 'orificio', 'movieran', 'Léelo', 'perspectivas', 'deshago', 'meticulosamente', 'colaborar']
+    src: ['SOS', 'I', 'hope', 'Tom', "'", 's', 'right', '.', 'EOS', 'PAD']
+    tgt: ['SOS', 'Ojalá', 'que', 'Tom', 'tenga', 'razón', '.', 'PAD', 'PAD', 'PAD']
+    out: ['inmortal', 'pong', 'Jugo', 'sencillo', 'enséñeme', 'lesión', 'provocadas', 'escriba', 'llevarte', 'casualmente']
     --
-    src: ['SOS', 'She', 'pressured', 'him', 'to', 'quit', 'his', 'job', '.', 'EOS']
-    tgt: ['SOS', 'Ella', 'le', 'presionó', 'para', 'que', 'dejase', 'su', 'trabajo', '.', 'PAD']
-    out: ['Entonces', 'sigue', 'obsesionada', 'Damasco', 'lavados', 'descuida', 'quedármelo', 'versos', 'noviembre', 'subsistir', 'maravilloso']
+    src: ['SOS', 'Nobody', 'else', 'showed', 'up', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'No', 'apareció', 'nadie', 'más', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['capacitada', 'narizota', 'preocupas', 'ganchos', 'enfermedades', 'murmurándose', 'copie', 'oficinistas', 'Haré', 'Prueba', 'aceptable', 'hechas']
     --
-    src: ['SOS', 'Tom', 'crashed', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', 'Tom', 'se', 'estrelló', '.', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['Sumatra', 'Apunta', 'afeitándote', 'Alcancé', 'desearía', 'afronte', 'constantemente', 'afronte', 'desearía']
-    --
-    ----------------------------------------------------------
-    Epoch: 0, Loss: 10.421916325887045
-    ----------------------------------------------------------
-    src: ['SOS', 'Can', 'I', 'get', 'by', 'the', 'guard', '?', 'EOS', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', '¿', 'Podré', 'burlar', 'la', 'guardia', '?', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['Escribes', 'descubierto', 'políticamente', 'deposita', 'católica', 'Merecés', 'me', 'bombilla', 'ridiculizarlo', 'llevara', 'abre']
-    --
-    src: ['SOS', 'What', 'did', 'you', 'give', 'Tom', 'on', 'his', 'birthday', '?', 'EOS', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', '¿', 'Qué', 'le', 'regalaste', 'a', 'Tom', 'en', 'su', 'cumpleaños', '?', 'PAD', 'PAD', 'PAD']
-    out: ['plegable', 'burbujas', 'Cancelé', 'titubees', 'Relajate', 'burles', 'empacando', 'elijas', 'galletitas', 'Beben', 'mountain', 'cazafantasmas', 'Salud', 'Halagar']
-    --
-    src: ['SOS', 'We', 'can', 'cure', 'some', 'types', 'of', 'cancer', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    tgt: ['SOS', 'Podemos', 'curar', 'algunos', 'tipos', 'de', 'cáncer', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    out: ['departamentos', 'pereza', 'deshago', 'almorzaba', 'lombriz', 'estúpida', 'Hablo', 'supremo', 'comprasteis', 'tomarías', 'Comí', 'cigarrillos', 'llevado', 'frescos', 'manuscrito', 'Bonaparte', 'déjalo']
+    src: ['SOS', 'Is', 'the', 'lecture', 'already', 'finished', '?', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', '¿', 'Ha', 'finalizado', 'ya', 'la', 'conferencia', '?', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['Esas', 'derretirán', 'NASA', 'contrataron', 'Trabajaré', 'retrasando', 'nuevas', 'reformar', 'perdone', 'tibia', 'inventario', 'olvidarse', 'encontrada']
     --
     ----------------------------------------------------------
-    Epoch: 1, Loss: 10.456007957458496
+    Epoch: 0, Loss: 10.40126864115397
+    ----------------------------------------------------------
+    src: ['SOS', 'I', 'couldn', "'", 't', 'speak', 'French', '.', 'EOS', 'PAD']
+    tgt: ['SOS', 'No', 'sabía', 'hablar', 'francés', '.', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['guapísima', 'pong', 'meteorito', 'ocasionalmente', 'hablo', 'árbitro', 'fotógrafo', 'tesoros', 'controversias', 'aportando']
+    --
+    src: ['SOS', 'Come', 'closer', 'to', 'me', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'Acércate', 'más', 'a', 'mí', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['grafiti', 'dotación', 'aclararse', 'Marque', 'apoyas', 'expulsado', 'reté', 'cercano', 'Accidentalmente', 'asiste', 'diablos', 'divertiría', 'Recientemente']
+    --
+    src: ['SOS', 'You', "'", 're', 'a', 'good', 'journalist', '.', 'EOS']
+    tgt: ['SOS', 'Vos', 'sos', 'un', 'buen', 'periodista', '.', 'PAD']
+    out: ['retórica', 'chavo', 'Irás', 'tocador', 'dejarle', 'asignatura', 'participantes', 'logrado']
+    --
+    ----------------------------------------------------------
+    Epoch: 1, Loss: 10.315495808919271
     ----------------------------------------------------------
     Training finished
 
