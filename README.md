@@ -43,7 +43,7 @@ class ModelConfig:
     n_head: int = 12           # number of self-attention heads
     d_ff: int = 2048           # dimension of the feedforward network
     src_vocab_size: int = 32   # size of the source vocabulary
-    tgt_vocab_size: int = 48   # size of the vocabulary
+    tgt_vocab_size: int = 32   # size of the vocabulary
     drop: float = 0.1          # dropout probability
     max_seq_len: int = 100     # maximum sequence length
     pad_token_id: int = 0      # padding token id (usually 0)
@@ -53,6 +53,11 @@ class ModelConfig:
 
 ```python
 config = ModelConfig()
+```
+
+
+```python
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 ```
 
 ### 3.1 Self-Attention
@@ -490,7 +495,7 @@ class Transformer(nn.Module):
 
     def generate_mask(self, x):
         seq_len = x.size(1)
-        mask = torch.tril(torch.ones(seq_len, seq_len)).unsqueeze(0)
+        mask = torch.tril(torch.ones(seq_len, seq_len)).to(x.device).unsqueeze(0)
         return mask
 
     def forward(self, src, tgt):
@@ -723,8 +728,6 @@ print([tgt_i2w[w.item()] for w in bo[0]])
 ```python
 criterion = nn.CrossEntropyLoss(ignore_index=config.pad_token_id)
 optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 ```
 
 
