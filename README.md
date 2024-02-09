@@ -12,11 +12,24 @@ Sequence modeling and transduction tasks, such as language modeling and machine 
 
 ## 2. Technical Approach
 
-The paper 'Attention is All You Need' introduced the novel Transformer model, ``a stacked encoder-decoder architecture that utilizes self-attention mechanisms instead of recurrence and convolution to compute input and output representations``. In this model, each of the six layers of both the encoder and decoder is composed of two main sub-layers: a multihead self-attention sub-layer, which allows the model to focus on different parts of the input sequence, and a position-wise fully connected feed-forward sub-layer.
+The paper 'Attention is All You Need' introduced the novel Transformer model, ``a stacked encoder-decoder architecture that utilizes self-attention mechanisms instead of recurrence and convolution to compute input and output representations``. In this model, each of the six layers of both the encoder and decoder blocks is composed of two main sub-layers: a multihead self-attention sub-layer, which allows the model to focus on different parts of the input sequence, and a position-wise fully connected feed-forward sub-layer.
 
 At its core, the ``self-attention mechanism`` enables the model to weight the relationships between input tokens at different positions, resulting in a more effective handling of long-range dependencies. Additionally, by integrating ``multiple attention heads``, the model gains the ability to simultaneously attend to various aspects of the input data during training.
 
 In the proposed implementation, the input and output tokens are converted to 512-dimensional embeddings, to which ``positional embeddings`` are added, enabling the model to use sequence order information.
+
+### 2.1 Attention
+
+Attention was first introduced as an enhancement to a basic encoder-decoder translation architecture *"for allowing a model to automatically (soft-)search
+for parts of a source sentence that are relevant to predicting a target word"*, as outlined in the paper [Neural machine translation by jointly learning to align and translate](https://arxiv.org/pdf/1409.0473.pdf). In practice, the attention mechanism converts a set of vectors represented in an initial dimensional space into a richer new space that is better suited to solving downstream tasks. In the context of language processing, a word embedding would be the initial dimensional space. However, this space would only capture some elementary (and fixed) semantic properties among words, whereas the attention mechanism would enrich it. 
+
+As an example, when given the sentence *the morning sun cast a warm `light` through the window*, the attention mechanism will transform the dimenstional space of the word *`light`* into a new dimensional space where *`light`* is closer to the words *`sun`* and *`window`*;
+
+![Attention S1](static/attention_s1.png)
+
+whereas in the sentence *she travels `light` for her weekend*, the word *`light`* would be represented closer to *`travel`*.
+
+![Attention S2](static/attention_s2.png)
 
 ## 3. Transformer Model Implementation
 
@@ -42,10 +55,10 @@ class ModelConfig:
     n_layer: int = 6           # number of encoder/decoder layers
     n_head: int = 8            # number of self-attention heads
     d_ff: int = 2048           # dimension of the feedforward network
-    src_vocab_size: int = 64   # size of the source vocabulary (will be updated after loading dataset)
-    tgt_vocab_size: int = 64   # size of the target vocabulary (will be updated after loading dataset)
+    src_vocab_size: int = 32   # size of the source vocabulary (will be updated after loading dataset)
+    tgt_vocab_size: int = 32   # size of the target vocabulary (will be updated after loading dataset)
     drop: float = 0.1          # dropout probability
-    max_seq_len: int = 128     # maximum sequence length (will be updated after loading dataset)
+    max_seq_len: int = 128      # maximum sequence length (will be updated after loading dataset)
     pad_token_id: int = 0      # padding token id (usually 0)
     activation: str = "gelu"   # activation function
 
@@ -133,7 +146,7 @@ print(output.shape)
 ```
 
     torch.Size([10, 32, 96])
-
+    
 
 ### 3.2 Multi-Head Attention
 
@@ -495,6 +508,14 @@ class Transformer(nn.Module):
         mask = torch.tril(torch.ones(seq_len, seq_len)).to(x.device).unsqueeze(0)
         return mask
 
+    #def generate_mask(self, src, tgt):
+    #    src_mask = (src != 0).unsqueeze(1).unsqueeze(2)
+    #    tgt_mask = (tgt != 0).unsqueeze(1).unsqueeze(3)
+    #    seq_length = tgt.size(1)
+    #    nopeak_mask = (1 - torch.triu(torch.ones(1, seq_length, seq_length), diagonal=1)).bool()
+    #    tgt_mask = tgt_mask & nopeak_mask
+    #    return src_mask, tgt_mask
+
     def forward(self, src, tgt):
         tgt_mask = self.generate_mask(tgt)
         
@@ -517,7 +538,7 @@ model(src, tgt).size()
 
 
 
-    torch.Size([10, 32, 64])
+    torch.Size([10, 32, 32])
 
 
 
@@ -535,7 +556,6 @@ def load_dataset():
     es = df[1].tolist()
     return en, es
 ```
-
 
 
 ```python
@@ -622,7 +642,7 @@ print(len(src_w2i), len(tgt_w2i))
 ```
 
     14779 28993
-
+    
 
 
 ```python
@@ -716,10 +736,10 @@ print([tgt_i2w[w.item()] for w in bd[0]])
 print([tgt_i2w[w.item()] for w in bo[0]])
 ```
 
-    ['SOS', 'I', "'", 'm', 'not', 'responsible', 'for', 'what', 'Tom', 'did', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    ['SOS', 'No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-    ['No', 'soy', 'responsable', 'de', 'lo', 'que', 'hizo', 'Tom', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
-
+    ['SOS', 'I', 'have', 'no', 'choice', 'at', 'all', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    ['SOS', 'No', 'tengo', 'otra', 'opción', 'en', 'absoluto', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    ['No', 'tengo', 'otra', 'opción', 'en', 'absoluto', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    
 
 
 ```python
@@ -752,7 +772,7 @@ len(src_train) // batch_size
 
 
 
-    2974
+    743
 
 
 
@@ -761,27 +781,22 @@ We perform a sample training process comprising 3 epochs with a batch of 32 to d
 
 ```python
 model.train()
-epochs = 3
-batch_size = 32
+epochs = 20
+batch_size = 128
 train_loader = batch_generator(src_train, tgt_train, batch_size)
 
 for epoch in range(epochs):
     epoch_loss = []
 
-    for i in range(16): # range(len(src_train) // batch_size):
+    for i in range(len(src_train) // batch_size):
         be, bd, bs = next(train_loader)
         be, bd, bs = be.to(device), bd.to(device), bs.to(device)
 
-        optimizer.zero_grad()
         output = model(be, bd)
         loss = criterion(output.permute(0, 2, 1), bs)
-        # src, tgt, output
-        if i % 8 == 0:
-            print("\n")
-            print(f'src: {[src_i2w[w.item()] for w in be[0]]}')
-            print(f'tgt: {[tgt_i2w[w.item()] for w in bd[0]]}')
-            print(f'out: {[tgt_i2w[w.item()] for w in output.argmax(dim=-1)[0]]}')
+
             
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
@@ -791,12 +806,60 @@ for epoch in range(epochs):
     print("----------------------------------------------------------")
 print('Training finished')
 ```
-    ----------------------------------------------------------
-    Epoch: 0, Loss: 9.223745942115784
-    ----------------------------------------------------------
-    Epoch: 1, Loss: 7.560144007205963
-    ----------------------------------------------------------
-    Epoch: 2, Loss: 6.74851581454277
-    ----------------------------------------------------------
-    Training finished
+
+    
+    
+    src: ['SOS', 'I', 'have', 'no', 'choice', 'at', 'all', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'No', 'tengo', 'otra', 'opción', 'en', 'absoluto', '.', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['\u200b', 'barniz', 'encendedor', 'vivificante', 'agujereada', 'seguiste', 'lápiz', 'reelecciones', 'votando', 'Esperamos', 'responde', 'analgésicos', 'termine', 'créeme', 'garzas', 'enterramos', 'Dénselo', 'hablarlo']
+    
+    
+    src: ['SOS', 'Mary', 'makes', 'more', 'money', 'than', 'her', 'husband', '.', 'EOS', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD', 'PAD']
+    tgt: ['SOS', 'Mary', 'gana', 'más', 'dinero', 'que', 'su', 'marido', '.', 'PAD', 'PAD', 'PAD', 'PAD']
+    out: ['EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS', 'EOS']
+    
+
+
+    ---------------------------------------------------------------------------
+
+    KeyboardInterrupt                         Traceback (most recent call last)
+
+    Cell In[63], line 23
+         20     print(f'tgt: {[tgt_i2w[w.item()] for w in bd[0]]}')
+         21     print(f'out: {[tgt_i2w[w.item()] for w in output.argmax(dim=-1)[0]]}')
+    ---> 23 loss.backward()
+         24 optimizer.step()
+         26 epoch_loss.append(loss.item())
+    
+
+    File c:\Users\Diego\dev\dcarpintero\transformer101\.venv\Lib\site-packages\torch\_tensor.py:522, in Tensor.backward(self, gradient, retain_graph, create_graph, inputs)
+        512 if has_torch_function_unary(self):
+        513     return handle_torch_function(
+        514         Tensor.backward,
+        515         (self,),
+       (...)
+        520         inputs=inputs,
+        521     )
+    --> 522 torch.autograd.backward(
+        523     self, gradient, retain_graph, create_graph, inputs=inputs
+        524 )
+    
+
+    File c:\Users\Diego\dev\dcarpintero\transformer101\.venv\Lib\site-packages\torch\autograd\__init__.py:266, in backward(tensors, grad_tensors, retain_graph, create_graph, grad_variables, inputs)
+        261     retain_graph = create_graph
+        263 # The reason we repeat the same comment below is that
+        264 # some Python versions print out the first line of a multi-line function
+        265 # calls in the traceback and some print out the last line
+    --> 266 Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+        267     tensors,
+        268     grad_tensors_,
+        269     retain_graph,
+        270     create_graph,
+        271     inputs,
+        272     allow_unreachable=True,
+        273     accumulate_grad=True,
+        274 )
+    
+
+    KeyboardInterrupt: 
 
